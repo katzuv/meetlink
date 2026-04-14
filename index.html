@@ -92,10 +92,12 @@
     .type-lecture { background: var(--blue-bg); }
     .type-tirgul  { background: #EAF7EE; }
     .type-sadna   { background: #FDEEF5; }
+    .type-mabada  { background: #FFF3E0; }
     .type-other   { background: var(--surface2); }
     @media (prefers-color-scheme: dark) {
       .type-tirgul { background: rgba(67,160,71,0.15); }
       .type-sadna  { background: rgba(194,24,91,0.15); }
+      .type-mabada { background: rgba(230,81,0,0.15); }
     }
     .link-info { flex: 1; min-width: 0; }
     .link-title { font-size: 13px; font-weight: 500; }
@@ -160,6 +162,7 @@
     .ev-lecture { background: #1A6FD4; color: white; }
     .ev-tirgul  { background: #43A047; color: white; }
     .ev-sadna   { background: #C2185B; color: white; }
+    .ev-mabada  { background: #E65100; color: white; }
     .ev-other   { background: #546E7A; color: white; }
     .sb-course { font-size: 12px; font-weight: 700; line-height: 1.3; color: inherit; }
     .sb-type   { font-size: 12.5px; opacity: 0.9; color: inherit; }
@@ -264,6 +267,11 @@
           <span>ייבוא</span>
         </button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)" />
+        <button class="btn" onclick="document.getElementById('importICSFile').click()" title="ייבוא קובץ ICS">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="17 8 12 3 7 8"/></svg>
+          <span>ייבוא ICS</span>
+        </button>
+        <input type="file" id="importICSFile" accept=".ics" style="display:none" onchange="importICS(event)" />
         <button class="btn btn-primary" onclick="openModal('course')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           <span>קורס חדש</span>
@@ -291,6 +299,7 @@
       <div class="legend-item"><div class="legend-dot" style="background:#1A6FD4"></div>הרצאה</div>
       <div class="legend-item"><div class="legend-dot" style="background:#43A047"></div>תרגול</div>
       <div class="legend-item"><div class="legend-dot" style="background:#C2185B"></div>סדנה</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#E65100"></div>מעבדה</div>
       <div class="legend-item"><div class="legend-dot" style="background:#546E7A"></div>אחר</div>
     </div>
     <div class="courses-list" id="coursesList"></div>
@@ -309,6 +318,7 @@
         <div class="legend-item"><div class="legend-dot" style="background:#1A6FD4"></div>הרצאה</div>
         <div class="legend-item"><div class="legend-dot" style="background:#43A047"></div>תרגול</div>
         <div class="legend-item"><div class="legend-dot" style="background:#C2185B"></div>סדנה</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#E65100"></div>מעבדה</div>
         <div class="legend-item"><div class="legend-dot" style="background:#F59E0B;border-radius:50%;width:8px;height:8px"></div>עכשיו</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
@@ -365,6 +375,7 @@
     lecture: { label:'הרצאה', icon:'📖', evCls:'ev-lecture', badgeCls:'type-lecture' },
     tirgul:  { label:'תרגול',  icon:'✏️',  evCls:'ev-tirgul',  badgeCls:'type-tirgul'  },
     sadna:   { label:'סדנה',   icon:'🛠️', evCls:'ev-sadna',   badgeCls:'type-sadna'   },
+    mabada:  { label:'מעבדה',  icon:'🔬',  evCls:'ev-mabada',  badgeCls:'type-mabada'  },
     other:   { label:'אחר',    icon:'🔗',  evCls:'ev-other',   badgeCls:'type-other'   },
   };
   const SK = 'zoom_v3';
@@ -436,6 +447,159 @@
         if (curView === 'list') renderList(); else renderSchedule();
         toast(`יובאו קורסים בהצלחה ✓`);
       } catch(err) { alert('שגיאה בקריאת הקובץ'); }
+      e.target.value = '';
+    };
+    reader.readAsText(file);
+  }
+
+  /* ── ICS Import ── */
+  // Matches known session-type prefixes
+  const ICS_TYPE_RE = /^(?:הרצאה|תרגול|סדנה|מעבדה|lecture|tirgul|sadna|lab|workshop)/i;
+
+  // Parses the CheeseFork/standard summary into { typePrefix, courseName }.
+  // CheeseFork format: "<type words> <section_number> - <course name>"
+  // Simple format:     "<type> - <course name>"  or  "<course name> - <type>"
+  function parseSummary(summary) {
+    // CheeseFork: "<words> <digits_only> - <rest>" — section number pattern
+    const m = summary.match(/^(.+?)\s+(\d+)\s*-\s*(.+)$/);
+    if (m) return { typePrefix: m[1].trim(), courseName: m[3].trim() };
+    // Simple separator patterns
+    const parts  = summary.split(/\s*[-–|]\s*/);
+    if (parts.length > 1) {
+      if (ICS_TYPE_RE.test(parts[0])) return { typePrefix: parts[0].trim(), courseName: parts.slice(1).join(' - ').trim() };
+      if (ICS_TYPE_RE.test(parts[parts.length - 1])) return { typePrefix: parts[parts.length - 1].trim(), courseName: parts.slice(0, -1).join(' - ').trim() };
+    }
+    return { typePrefix: null, courseName: summary.trim() };
+  }
+
+  function detectTypeFromSummary(summary) {
+    const { typePrefix } = parseSummary(summary);
+    const check = typePrefix || summary;
+    if (/מעבדה|lab/i.test(check)) return 'mabada';
+    if (/הרצא|lecture|lect/i.test(check)) return 'lecture';
+    if (/תרגול|tirgul|tirg/i.test(check)) return 'tirgul';
+    if (/סדנה|sadna|workshop/i.test(check)) return 'sadna';
+    return 'other';
+  }
+
+  function extractCourseName(summary) {
+    return parseSummary(summary).courseName;
+  }
+
+  function deriveLinkTitle(type, typePrefix, summary) {
+    if (type !== 'other') return TYPE[type].label;
+    return typePrefix || summary;
+  }
+
+  function importICS(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      // Unfold continuation lines per RFC 5545
+      const text = ev.target.result
+        .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+        .replace(/\n[ \t]/g, '');
+
+      const vEventBlocks = text.split(/BEGIN:VEVENT\n/).slice(1);
+      if (!vEventBlocks.length) { alert('לא נמצאו אירועים בקובץ ICS'); e.target.value = ''; return; }
+
+      const getField = (block, key) => {
+        const re = new RegExp(`^${key}(?:;[^:\n]*)?:([^\n]*)`, 'mi');
+        const m = block.match(re);
+        return m ? m[1].trim().replace(/\\\\/g, '\\').replace(/\\n/g, '\n').replace(/\\,/g, ',') : '';
+      };
+
+      // Map: summary → { courseName, type, title, url, location, slots: Map }
+      const groups = new Map();
+
+      vEventBlocks.forEach(block => {
+        const summary     = getField(block, 'SUMMARY');
+        const dtstart     = getField(block, 'DTSTART');
+        const dtend       = getField(block, 'DTEND');
+        const location    = getField(block, 'LOCATION');
+        const description = getField(block, 'DESCRIPTION');
+
+        if (!summary || !dtstart) return;
+
+        // Parse datetime — skip all-day events (no T component)
+        const dtMatch = dtstart.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
+        if (!dtMatch) return;
+
+        const isUTC = dtstart.endsWith('Z');
+        let startDate;
+        if (isUTC) {
+          startDate = new Date(Date.UTC(+dtMatch[1], +dtMatch[2]-1, +dtMatch[3], +dtMatch[4], +dtMatch[5]));
+        } else {
+          startDate = new Date(+dtMatch[1], +dtMatch[2]-1, +dtMatch[3], +dtMatch[4], +dtMatch[5]);
+        }
+
+        const heDay  = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'][startDate.getDay()];
+        const timeStr = `${String(startDate.getHours()).padStart(2,'0')}:${String(startDate.getMinutes()).padStart(2,'0')}`;
+
+        // Duration
+        let duration = 90;
+        const deMatch = dtend.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
+        if (deMatch) {
+          const endDate = dtend.endsWith('Z')
+            ? new Date(Date.UTC(+deMatch[1], +deMatch[2]-1, +deMatch[3], +deMatch[4], +deMatch[5]))
+            : new Date(+deMatch[1], +deMatch[2]-1, +deMatch[3], +deMatch[4], +deMatch[5]);
+          duration = Math.round((endDate - startDate) / 60000);
+        }
+
+        // Extract first URL from description or location; trim only wrapping chars that can't appear in URLs
+        const urlMatch = (description + ' ' + location).match(/https?:\/\/\S+/);
+        const url = urlMatch ? urlMatch[0].replace(/[>)\]]+$/, '') : '';
+
+        if (!groups.has(summary)) {
+          const type                    = detectTypeFromSummary(summary);
+          const { typePrefix, courseName } = parseSummary(summary);
+          const title                   = deriveLinkTitle(type, typePrefix, summary);
+          groups.set(summary, { courseName, type, title, url, location: location || '', description: description || '', slots: new Map() });
+        }
+
+        const g = groups.get(summary);
+        const slotKey = `${heDay}|${timeStr}`;
+        if (!g.slots.has(slotKey)) g.slots.set(slotKey, { day: heDay, time: timeStr, duration });
+        if (!g.url && url) g.url = url;
+      });
+
+      if (!groups.size) { alert('לא נמצאו אירועים תקינים בקובץ'); e.target.value = ''; return; }
+
+      // Group link descriptors by course name
+      const courseMap = new Map();
+      groups.forEach(g => {
+        if (!courseMap.has(g.courseName)) courseMap.set(g.courseName, []);
+        courseMap.get(g.courseName).push(g);
+      });
+
+      let addedCourses = 0, addedLinks = 0;
+
+      courseMap.forEach((links, courseName) => {
+        let course = state.courses.find(c => c.name === courseName);
+        if (!course) {
+          course = { id: uid(), name: courseName, color: COLORS[state.courses.length % COLORS.length], links: [] };
+          state.courses.push(course);
+          addedCourses++;
+        }
+        links.forEach(g => {
+          const newSlots = [...g.slots.values()];
+          const existingSlotKeys = new Set(
+            course.links
+              .filter(l => l.type === g.type && l.title === g.title)
+              .flatMap(l => (l.slots || []).map(s => `${s.day}|${s.time}`))
+          );
+          const allCovered = newSlots.length > 0 && newSlots.every(s => existingSlotKeys.has(`${s.day}|${s.time}`));
+          if (!allCovered) {
+            course.links.push({ id: uid(), title: g.title, url: g.url, type: g.type, slots: newSlots, room: g.location, note: g.description });
+            addedLinks++;
+          }
+        });
+      });
+
+      save();
+      if (curView === 'schedule') renderSchedule(); else renderList();
+      toast(`יובאו ${addedCourses} קורסים ו-${addedLinks} קישורים ✓`);
       e.target.value = '';
     };
     reader.readAsText(file);
@@ -576,10 +740,10 @@
         </div>
         <div class="link-btns">
           ${pwd ? `<button class="pwd-btn" onclick="copyPwd('${esc(pwd)}')" title="העתק סיסמה">🔑 סיסמה</button>` : ''}
-          <a class="open-btn" href="${esc(l.url)}" target="_blank" rel="noopener">
+          ${l.url ? `<a class="open-btn" href="${esc(l.url)}" target="_blank" rel="noopener">
             כניסה
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-          </a>
+          </a>` : ''}
         </div>
       </div>`;
   }
@@ -637,14 +801,16 @@
           const durClass = ev.duration >= 180 ? 'dur-180' : ev.duration >= 150 ? 'dur-150' : ev.duration >= 120 ? 'dur-120' : ev.duration >= 90 ? 'dur-90' : '';
           const durStyle = ev.duration > 180 ? `min-height:${Math.round(ev.duration/60*108)}px` : '';
           const active   = isActiveNow(ev.day, ev.time, ev.duration);
-          html += `<a class="sched-block ${tm.evCls} ${durClass} ${active?'is-active':''}" href="${esc(ev.url)}" target="_blank" rel="noopener" ${durStyle?`style="${durStyle}"`:''}>
+          const blockTag = ev.url ? 'a' : 'div';
+          const blockHref = ev.url ? `href="${esc(ev.url)}" target="_blank" rel="noopener"` : '';
+          html += `<${blockTag} class="sched-block ${tm.evCls} ${durClass} ${active?'is-active':''}" ${blockHref} ${durStyle?`style="${durStyle}"`:''}>
             <span class="sb-course">${esc(ev.courseName)}</span>
             <span class="sb-type">${icon} ${tm.label}</span>
             ${ev.room ? `<span class="sb-room">📍 ${esc(ev.room)}</span>` : ''}
             ${ev.duration ? `<span class="sb-dur">⏱ ${ev.duration} דק׳</span>` : ''}
             ${active ? `<span class="sb-now">● עכשיו</span>` : ''}
-            <span class="sb-enter">לחץ לכניסה ←</span>
-          </a>`;
+            ${ev.url ? `<span class="sb-enter">לחץ לכניסה ←</span>` : ''}
+          </${blockTag}>`;
         });
         html += `</div></td>`;
       });
@@ -805,8 +971,8 @@
           <input class="form-control" id="f_title" value="${ex?esc(ex.title):''}" placeholder="לדוגמה: הרצאה שבועית" oninput="autoDetectType(this.value)" />
         </div>
         <div class="form-group">
-          <label>קישור</label>
-          <input class="form-control" id="f_url" type="url" value="${ex?esc(ex.url):''}" placeholder="https://zoom.us/j/... או Panopto / YouTube" />
+          <label>קישור <span style="font-weight:400;color:var(--text3)">(אופציונלי)</span></label>
+          <input class="form-control" id="f_url" type="url" value="${ex?esc(ex.url||''):''}" placeholder="https://zoom.us/j/... או Panopto / YouTube" />
         </div>
         <div class="form-group">
           <label>סוג שיעור</label>
@@ -842,6 +1008,7 @@
     if (/^הרצ/i.test(v) || /^lect/i.test(v)) sel.value = 'lecture';
     else if (/^תר/i.test(v) || /^tirg/i.test(v)) sel.value = 'tirgul';
     else if (/^סד/i.test(v) || /^sadn/i.test(v)) sel.value = 'sadna';
+    else if (/^מעבד/i.test(v) || /^lab/i.test(v)) sel.value = 'mabada';
   }
 
   function selectColor(el) { document.querySelectorAll('.color-dot').forEach(d=>d.classList.remove('selected')); el.classList.add('selected'); }
@@ -872,7 +1039,6 @@
     const title = document.getElementById('f_title').value.trim();
     const url   = document.getElementById('f_url').value.trim();
     if (!title) { alert('נא להזין כותרת'); return; }
-    if (!url)   { alert('נא להזין קישור'); return; }
     const data = {
       title, url,
       type:  document.getElementById('f_type').value,
